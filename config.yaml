@@ -1,0 +1,7 @@
+# Server configuration for the simple web/proxy server
+# Paths are relative to the repository root (proxy_server/)
+host: 0.0.0.0
+port: 8080
+
+# Document root where static files are served from
+doc_root: www
