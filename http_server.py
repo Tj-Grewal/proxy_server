@@ -8,6 +8,7 @@ import os
 import sys
 import signal
 from datetime import datetime, timezone
+import threading
 
 HTTP_METHODS: Final[List[str]] = ["GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE"]
 HTTP_VERSION: Final[str] = "HTTP/1.1"
@@ -214,10 +215,44 @@ def handle_request(request: HttpRequest, web_root: str = ".") -> str:
         body = f"<html><body><h1>500 Internal Server Error</h1><p>{str(e)}</p></body></html>"
         return create_response(500, "Internal Server Error", body)
 
+# TODO: find out what the type of client_address is, socket._RetAddress gives AttributeErrors
+def handle_connection(client_socket: socket.socket, client_address, web_root: str) -> None:
+    print(f"\nConnection from {client_address}")
+
+    try:
+        request_data = client_socket.recv(4096).decode('utf-8')
+
+        if not request_data:
+            client_socket.close()
+            return
+
+        print(f"Request:\n{request_data[:200]}...")  # Print first 200 chars
+
+        try:
+            request = parse_request(request_data)
+            response = handle_request(request, web_root)
+
+            print(f"Response: {response.split(chr(13))[0]}")  # Print status line
+
+        except RuntimeError as e:
+            print(f"Error parsing request: {e}")
+            if "Unsupported HTTP version" in str(e):
+                body = "<html><body><h1>505 HTTP Version Not Supported</h1></body></html>"
+                response = create_response(505, "HTTP Version Not Supported", body)
+            else:
+                body = f"<html><body><h1>400 Bad Request</h1><p>{str(e)}</p></body></html>"
+                response = create_response(400, "Bad Request", body)
+
+        # Send response back to client
+        client_socket.sendall(response.encode('utf-8'))
+
+    except Exception as e:
+        print(f"Error handling request: {e}")
+    finally:
+        client_socket.close()
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8080, web_root: str = "."):
-
     # Create a TCP socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -230,48 +265,16 @@ def run_server(host: str = "127.0.0.1", port: int = 8080, web_root: str = "."):
     
     try:
         while True:
-            # Accept incoming connection
             client_socket, client_address = server_socket.accept()
-            print(f"\nConnection from {client_address}")
-            
-            try:
-                request_data = client_socket.recv(4096).decode('utf-8')
-                
-                if not request_data:
-                    client_socket.close()
-                    continue
-                
-                print(f"Request:\n{request_data[:200]}...")  # Print first 200 chars
-                
-                try:
-                    request = parse_request(request_data)
-                    response = handle_request(request, web_root)
-                    
-                    print(f"Response: {response.split(chr(13))[0]}")  # Print status line
-                    
-                except RuntimeError as e:
-                    print(f"Error parsing request: {e}")
-                    if "Unsupported HTTP version" in str(e):
-                        body = "<html><body><h1>505 HTTP Version Not Supported</h1></body></html>"
-                        response = create_response(505, "HTTP Version Not Supported", body)
-                    else:
-                        body = f"<html><body><h1>400 Bad Request</h1><p>{str(e)}</p></body></html>"
-                        response = create_response(400, "Bad Request", body)
-                
-                # Send response back to client
-                client_socket.sendall(response.encode('utf-8'))
-                
-            except Exception as e:
-                print(f"Error handling request: {e}")
-            finally:
-                client_socket.close()
-    
+            # Hands off socket management to thread
+            # NOTE: We shouldn't need to .join() all the threads at the end since the threads are self-terminating (specifically, the lack of loops.)
+            incoming_thread = threading.Thread(target=handle_connection, args=(client_socket, client_address, web_root))
+            incoming_thread.start()
+
     except KeyboardInterrupt:
         print("\n\nShutting down server...")
     finally:
         server_socket.close()
-
-
 
 if __name__ == "__main__":    
     run_server(HOST, PORT, WEB_ROOT)
