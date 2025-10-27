@@ -12,11 +12,11 @@ import threading
 
 HTTP_METHODS: Final[List[str]] = ["GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE"]
 HTTP_VERSION: Final[str] = "HTTP/1.1"
-HOST = "127.0.0.1"  # localhost
-PORT = 8080         # Port number
-WEB_ROOT = "."      # Current directory
+HOST: Final[str] = "127.0.0.1"  # localhost
+PORT: Final[int] = 8080         # Port number
+WEB_ROOT: Final[str] = "."      # Current directory
 
-TOKEN = re.compile(r"^[!#$%&'*+\-.\^_`|~0-9A-Za-z]+$")
+TOKEN: re.Pattern = re.compile(r"^[!#$%&'*+\-.\^_`|~0-9A-Za-z]+$")
 
 @dataclass
 class HttpRequest:
