@@ -28,7 +28,7 @@ class HttpRequest:
 
     def get_header(self, key: str) -> Optional[str]:
         return self.headers.get(key)
-    
+
 def parse_request(payload: str) -> HttpRequest:
     # Parse start-line
     start_line, payload = payload.split('\r\n', maxsplit=1)
@@ -93,10 +93,7 @@ def parse_request(payload: str) -> HttpRequest:
         body=payload
     )
 
-
-
 def create_response(status_code: int, status_message: str, body: str = "", content_type: str = "text/html", extra_headers: Optional[Dict[str, str]] = None) -> str:
-
     response = f"{HTTP_VERSION} {status_code} {status_message}\r\n"
     
     # Add standard headers
@@ -116,24 +113,11 @@ def create_response(status_code: int, status_message: str, body: str = "", conte
     
     return response
 
-
-
-def handle_request(request: HttpRequest, web_root: str = ".") -> str:
-    
-    # Check HTTP version (505 HTTP Version Not Supported)
-    if request.http_version != HTTP_VERSION:
-        body = "<html><body><h1>505 HTTP Version Not Supported</h1></body></html>"
-        return create_response(505, "HTTP Version Not Supported", body)
-    
-    # Only support GET and HEAD methods for this simple server
-    if request.method not in ["GET", "HEAD"]:
-        body = "<html><body><h1>405 Method Not Allowed</h1></body></html>"
-        return create_response(405, "Method Not Allowed", body, extra_headers={"Allow": "GET, HEAD"})
-    
+def handle_local_target(request: HttpRequest, web_root: str) -> str:
     # Parse the request target and remove query string if present, since it doesn't affect what file we serve
     # This is probably overkill for the project but adding it in for completeness
     target_path = request.target.split('?')[0]
-    
+
     # Security check: prevent path traversal attacks (403 Forbidden)
     # For attacks like: GET /../../../etc/passwd HTTP/1.1 - leaking the files
     # TODO Any other things we can think of adding here? 
@@ -215,6 +199,30 @@ def handle_request(request: HttpRequest, web_root: str = ".") -> str:
         body = f"<html><body><h1>500 Internal Server Error</h1><p>{str(e)}</p></body></html>"
         return create_response(500, "Internal Server Error", body)
 
+def handle_remote_target(request: HttpRequest) -> str:
+    pass
+
+def handle_request(request: HttpRequest, web_root: str = ".") -> str:
+    # Check HTTP version (505 HTTP Version Not Supported)
+    if request.http_version != HTTP_VERSION:
+        body = "<html><body><h1>505 HTTP Version Not Supported</h1></body></html>"
+        return create_response(505, "HTTP Version Not Supported", body)
+
+    # Only support GET and HEAD methods for this simple server
+    if request.method not in ["GET", "HEAD"]:
+        body = "<html><body><h1>405 Method Not Allowed</h1></body></html>"
+        return create_response(405, "Method Not Allowed", body, extra_headers={"Allow": "GET, HEAD"})
+
+    if request.target.startswith("http://"):
+        return handle_remote_target(request)
+    elif request.target.startswith("https://"):
+        # TODO: out of scope for project, requires CONNECT method due to TLS
+        # This should be covered in earlier method check, but possible that client is inappropriately using methods
+        body = "<html><body><h1>501 Not Implemented</h1></body></html>"
+        return create_response(501, "Not Implemented", body)
+    else:
+        return handle_local_target(request, web_root)
+
 # TODO: find out what the type of client_address is, socket._RetAddress gives AttributeErrors
 def handle_connection(client_socket: socket.socket, client_address, web_root: str) -> None:
     print(f"\nConnection from {client_address}")
@@ -250,7 +258,6 @@ def handle_connection(client_socket: socket.socket, client_address, web_root: st
         print(f"Error handling request: {e}")
     finally:
         client_socket.close()
-
 
 def run_server(host: str = "127.0.0.1", port: int = 8080, web_root: str = "."):
     # Create a TCP socket
