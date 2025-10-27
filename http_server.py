@@ -95,7 +95,7 @@ def parse_request(payload: str) -> HttpRequest:
 
 
 
-def create_response(status_code: int, status_message: str, body: str = "", content_type: str = "text/html", extra_headers: Dict[str, str] = None) -> str:
+def create_response(status_code: int, status_message: str, body: str = "", content_type: str = "text/html", extra_headers: Optional[Dict[str, str]] = None) -> str:
 
     response = f"{HTTP_VERSION} {status_code} {status_message}\r\n"
     
