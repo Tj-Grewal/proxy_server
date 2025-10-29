@@ -15,19 +15,31 @@ HTTP_VERSION: Final[str] = "HTTP/1.1"
 HOST: Final[str] = "127.0.0.1"  # localhost
 PORT: Final[int] = 8080         # Port number
 WEB_ROOT: Final[str] = "."      # Current directory
+RECV_BUFFER_SIZE: Final[int] = 4096
 
-TOKEN: re.Pattern = re.compile(r"^[!#$%&'*+\-.\^_`|~0-9A-Za-z]+$")
+TOKEN_PATTERN: re.Pattern = re.compile(r"^[!#$%&'*+\-.\^_`|~0-9A-Za-z]+$")
+# Could use urllib module, but unsure if allowed due to proxmity to http module
+URL_PATTERN: re.Pattern = re.compile(r"http://([\w\-\.]+)")
 
 @dataclass
-class HttpRequest:
-    method: str
-    target: str
+class HttpMessage:
+    """
+    Holds common fields for both HTTP requests and responses
+    """
     http_version: str
     headers: Dict[str, str]
     body: Optional[str]
 
     def get_header(self, key: str) -> Optional[str]:
         return self.headers.get(key)
+
+@dataclass
+class HttpRequest(HttpMessage):
+    """
+    Holds fields specific to requests
+    """
+    method: str
+    target: str
 
     def serialize(self) -> str:
         start_line = f"{self.method} {self.target} {self.http_version}"
@@ -37,6 +49,16 @@ class HttpRequest:
             return f"{start_line}\r\n{field_lines}\r\n\r\n{self.body}"
         else:
             return f"{start_line}\r\n{field_lines}\r\n\r\n"
+
+@dataclass
+class HttpResponse(HttpMessage):
+    """
+    Placeholder
+
+    Holds fields specific to responses
+    """
+    status_code: int
+    status_message: str
 
 def parse_request(payload: str) -> HttpRequest:
     # Parse start-line
@@ -48,7 +70,7 @@ def parse_request(payload: str) -> HttpRequest:
     method, target, version = start_line_parts
 
     # Parse method per RFC9112: Appendix A. Collected ABNF and RFC9110: Section 5.6.2: Tokens
-    if method == "" or TOKEN.match(method) is None:
+    if method == "" or TOKEN_PATTERN.match(method) is None:
         raise RuntimeError("Invalid request-line method")
 
     if method not in HTTP_METHODS:
@@ -208,8 +230,26 @@ def handle_local_target(request: HttpRequest, web_root: str) -> str:
         body = f"<html><body><h1>500 Internal Server Error</h1><p>{str(e)}</p></body></html>"
         return create_response(500, "Internal Server Error", body)
 
-def handle_remote_target(request: HttpRequest) -> str:
-    
+def handle_remote_target(request: HttpRequest, is_caching: bool = False) -> str:
+    hostname = URL_PATTERN.match(request.target)
+    if hostname is None:
+        raise RuntimeError()
+    hostname = hostname.group(1)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+        client_socket.connect((hostname, 80))
+        client_socket.send(request.serialize().encode("utf-8"))
+
+        response = bytearray()
+
+        while True:
+            received = client_socket.recv(RECV_BUFFER_SIZE)
+            if received == b"":
+                break;
+
+            response += received
+
+    return response.decode("utf-8")
 
 def handle_request(request: HttpRequest, web_root: str = ".") -> str:
     # Check HTTP version (505 HTTP Version Not Supported)
