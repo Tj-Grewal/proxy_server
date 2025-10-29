@@ -29,6 +29,15 @@ class HttpRequest:
     def get_header(self, key: str) -> Optional[str]:
         return self.headers.get(key)
 
+    def serialize(self) -> str:
+        start_line = f"{self.method} {self.target} {self.http_version}"
+        field_lines = "\r\n".join(f"{key}: {value}" for key, value in self.headers.items())
+
+        if self.body is not None:
+            return f"{start_line}\r\n{field_lines}\r\n\r\n{self.body}"
+        else:
+            return f"{start_line}\r\n{field_lines}\r\n\r\n"
+
 def parse_request(payload: str) -> HttpRequest:
     # Parse start-line
     start_line, payload = payload.split('\r\n', maxsplit=1)
@@ -200,7 +209,7 @@ def handle_local_target(request: HttpRequest, web_root: str) -> str:
         return create_response(500, "Internal Server Error", body)
 
 def handle_remote_target(request: HttpRequest) -> str:
-    pass
+    
 
 def handle_request(request: HttpRequest, web_root: str = ".") -> str:
     # Check HTTP version (505 HTTP Version Not Supported)
