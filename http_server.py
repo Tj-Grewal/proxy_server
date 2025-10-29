@@ -1,5 +1,6 @@
 # TODO: See if there is another exception that's more appropriate than RuntimeError
 
+import dataclasses
 from typing import Optional, Final, List, Dict
 from dataclasses import dataclass
 import re
@@ -31,19 +32,12 @@ class HttpMessage:
     http_version: str
     headers: Dict[str, str]
     body: Optional[str]
-    internal: Dict[str, str | int]
 
     def set_header(self, key: str, value: str) -> None:
         self.headers[key] = value
 
     def get_header(self, key: str) -> Optional[str]:
         return self.headers.get(key)
-
-    def set_internal(self, key: str, value: str | int) -> None:
-        self.internal[key] = value
-
-    def get_internal(self, key: str) -> str | int:
-        return self.internal[key]
 
 @dataclass
 class HttpRequest(HttpMessage):
@@ -63,37 +57,51 @@ class HttpRequest(HttpMessage):
             return f"{start_line}\r\n{field_lines}\r\n\r\n"
 
 @dataclass
-class HttpResponse(HttpMessage):
-    """
-    Placeholder
-
-    Holds fields specific to responses
-    """
-    status_code: int
-    status_message: str
-
-@dataclass
 class HttpProxyCache:
-    entries: Dict[str, HttpResponse]
+    """
+    In-memory HttpResponse caching
 
-    def set_cache(self, target: str, object: HttpResponse) -> None:
-        object.set_internal("expiry", time_ns() + CACHE_TTL)
+    Entries are in the form of HTTP Objects, expiration timestamp, and a date
+    - the HTTP Object is a Python string representation
+    - the is an expiration represented in nanoseconds since epoch
+    - the date is represented in RFC9110 and RFC 9112 Date standard
+    """
+    entries: Dict[str, tuple[str, int, str]]
+    lock: threading.RLock
 
-        self.entries[target] = object
+    def set(self, target: str, object: str, date: Optional[str]) -> None:
+        with self.lock:
+            if date is not None:
+                self.entries[target] = (object, time_ns() + CACHE_TTL, date)
+            else:
+                self.entries[target] = (object, time_ns() + CACHE_TTL, datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT'))
 
-    def get_cache(self, target: str) -> HttpResponse | None:
+    def get_object(self, target: str) -> str | None:
         if self.entries[target] is None:
             return None
 
-        entry_expiry = self.entries[target].get_internal("expiry")
-        # To placate the type checker due to server internal headers having type: str | int
-        if isinstance(entry_expiry, int) and entry_expiry < time_ns():
-            self.entries.pop(target)
+        return self.entries[target][0]
+
+    def get_expiry_timestamp(self, target: str) -> int | None:
+        if self.entries[target] is None:
             return None
 
-        return self.entries[target]
+        return self.entries[target][1]
 
+    def get_date(self, target: str) -> str | None:
+        if self.entries[target] is None:
+            return None
 
+        return self.entries[target][2]
+
+    def exists(self, target: str) -> bool:
+        return target in self.entries
+
+    def is_valid(self, target: str) -> bool:
+        return self.entries[target][1] > time_ns()
+
+# TODO: make this thread-safe
+RESPONSE_CACHE: HttpProxyCache = HttpProxyCache(entries={}, lock=threading.RLock())
 
 def parse_request(payload: str) -> HttpRequest:
     # Parse start-line
@@ -148,8 +156,7 @@ def parse_request(payload: str) -> HttpRequest:
             target=target,
             http_version=version,
             headers=headers,
-            body=None,
-            internal={}
+            body=None
         )
 
     return HttpRequest(
@@ -157,8 +164,7 @@ def parse_request(payload: str) -> HttpRequest:
         target=target,
         http_version=version,
         headers=headers,
-        body=payload,
-        internal={}
+        body=payload
     )
 
 def create_response(status_code: int, status_message: str, body: str = "", content_type: str = "text/html", extra_headers: Optional[Dict[str, str]] = None) -> str:
@@ -267,17 +273,34 @@ def handle_local_target(request: HttpRequest, web_root: str) -> str:
         body = f"<html><body><h1>500 Internal Server Error</h1><p>{str(e)}</p></body></html>"
         return create_response(500, "Internal Server Error", body)
 
-def handle_remote_target(request: HttpRequest, is_caching: bool = False) -> str:
+def handle_remote_target(request: HttpRequest) -> str:
+    # Get the remote
     hostname = URL_PATTERN.match(request.target)
     if hostname is None:
         raise RuntimeError()
     hostname = hostname.group(1)
 
+    # The object exists in cache and it's TTL is still valid then return the object as is
+    if RESPONSE_CACHE.exists(request.target) and RESPONSE_CACHE.is_valid(request.target):
+        cached_object = RESPONSE_CACHE.get_object(request.target)
+
+        if cached_object is not None:
+            print(f"Cache hit for target: {request.target}")
+            return cached_object
+
+    # The object exists in cache but it's TTL is invalid then add a If-Modified-Since header
+    if RESPONSE_CACHE.exists(request.target) and RESPONSE_CACHE.is_valid(request.target) is False:
+        cached_date = RESPONSE_CACHE.get_date(request.target)
+        if cached_date is not None:
+            print(f"Cache TTL invalidated for target: {request.target}")
+            request.set_header("If-Modified-Since", cached_date)
+
+    # Otherwise if the object does not exist in cache, send the request as is
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         client_socket.connect((hostname, 80))
         client_socket.send(request.serialize().encode("utf-8"))
 
-        response = bytearray()
+        response = b""
 
         while True:
             received = client_socket.recv(RECV_BUFFER_SIZE)
@@ -285,6 +308,9 @@ def handle_remote_target(request: HttpRequest, is_caching: bool = False) -> str:
                 break;
 
             response += received
+
+    # In the latter two cases: set target to new object in cache
+    RESPONSE_CACHE.set(request.target, response.decode("utf-8"), None)
 
     return response.decode("utf-8")
 
