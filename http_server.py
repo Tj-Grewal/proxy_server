@@ -29,9 +29,19 @@ class HttpMessage:
     http_version: str
     headers: Dict[str, str]
     body: Optional[str]
+    internal: Dict[str, str | int]
+
+    def set_header(self, key: str, value: str) -> None:
+        self.headers[key] = value
 
     def get_header(self, key: str) -> Optional[str]:
         return self.headers.get(key)
+
+    def set_internal(self, key: str, value: str | int) -> None:
+        self.internal[key] = value
+
+    def get_internal(self, key: str) -> str | int:
+        return self.internal[key]
 
 @dataclass
 class HttpRequest(HttpMessage):
