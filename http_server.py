@@ -9,6 +9,7 @@ import sys
 import signal
 from datetime import datetime, timezone
 import threading
+from time import time_ns
 
 HTTP_METHODS: Final[List[str]] = ["GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE"]
 HTTP_VERSION: Final[str] = "HTTP/1.1"
@@ -16,6 +17,7 @@ HOST: Final[str] = "127.0.0.1"  # localhost
 PORT: Final[int] = 8080         # Port number
 WEB_ROOT: Final[str] = "."      # Current directory
 RECV_BUFFER_SIZE: Final[int] = 4096
+CACHE_TTL: Final[int] = 30 * 10 ** 9 # Conversion from second to nanoseconds
 
 TOKEN_PATTERN: re.Pattern = re.compile(r"^[!#$%&'*+\-.\^_`|~0-9A-Za-z]+$")
 # Could use urllib module, but unsure if allowed due to proxmity to http module
@@ -69,6 +71,29 @@ class HttpResponse(HttpMessage):
     """
     status_code: int
     status_message: str
+
+@dataclass
+class HttpProxyCache:
+    entries: Dict[str, HttpResponse]
+
+    def set_cache(self, target: str, object: HttpResponse) -> None:
+        object.set_internal("expiry", time_ns() + CACHE_TTL)
+
+        self.entries[target] = object
+
+    def get_cache(self, target: str) -> HttpResponse | None:
+        if self.entries[target] is None:
+            return None
+
+        entry_expiry = self.entries[target].get_internal("expiry")
+        # To placate the type checker due to server internal headers having type: str | int
+        if isinstance(entry_expiry, int) and entry_expiry < time_ns():
+            self.entries.pop(target)
+            return None
+
+        return self.entries[target]
+
+
 
 def parse_request(payload: str) -> HttpRequest:
     # Parse start-line
