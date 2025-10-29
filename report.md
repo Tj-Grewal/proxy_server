@@ -21,7 +21,7 @@ The deliverable of this step is writing down the specifications of the logic for
 
 Note that HTTP protocol is a request/response protocol. Therefore, implementing a Web Server means writing code for a server that can receive HTTP messages sent to a known port number that is listening to client requests, processing those requests, and responding to them.
 
-(b) To test your web server for the correct working scenario, copy test.html Download test.htmlin the main directory of your web server. Then find out the IP address of your machine (or use the local host address), and the port used in the code for the web server and type the following in your web browser (2 points):
+(b) To test your web server for the correct working scenario, copy test.html Download test.html in the main directory of your web server. Then find out the IP address of your machine (or use the local host address), and the port used in the code for the web server and type the following in your web browser (2 points):
 
 http://IP_ADDRESS:PORT/test.html
 
