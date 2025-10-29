@@ -309,10 +309,32 @@ def handle_remote_target(request: HttpRequest) -> str:
 
             response += received
 
-    # In the latter two cases: set target to new object in cache
-    RESPONSE_CACHE.set(request.target, response.decode("utf-8"), None)
+    # TODO: technical spec violation since all start-lines and field-liens should be USASCII, but UTF-8 is a superset
+    response = response.decode("utf-8")
 
-    return response.decode("utf-8")
+    # Handle cache re-validation, specifically, if on 304, then re-seat the cached_object into the cache again
+    if RESPONSE_CACHE.exists(request.target) and RESPONSE_CACHE.is_valid(request.target) is False:
+        lines = response.split('\r\n')
+        
+        start_line = [line for line in lines if line.startswith(HTTP_VERSION)][0]
+        version, status_code, status_message = start_line.split(' ', maxsplit=2)
+
+        # Check if 304 Not Modified exists
+        if int(status_code) == 304:
+            # If true, re-set the cached_object into cache
+            last_modified = [line for line in lines if line.startswith("Last-Modified")][0]
+            cached_object = RESPONSE_CACHE.get_object(request.target)
+
+            print(status_code)
+            print(last_modified)
+
+            if cached_object is not None:
+                RESPONSE_CACHE.set(request.target, cached_object, last_modified.split(": ")[1])
+                print(f"Cache revalidated for: {request.target}")
+                return cached_object
+
+    RESPONSE_CACHE.set(request.target, response, None)
+    return response
 
 def handle_request(request: HttpRequest, web_root: str = ".") -> str:
     # Check HTTP version (505 HTTP Version Not Supported)
