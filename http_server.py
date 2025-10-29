@@ -148,7 +148,8 @@ def parse_request(payload: str) -> HttpRequest:
             target=target,
             http_version=version,
             headers=headers,
-            body=None
+            body=None,
+            internal={}
         )
 
     return HttpRequest(
@@ -156,7 +157,8 @@ def parse_request(payload: str) -> HttpRequest:
         target=target,
         http_version=version,
         headers=headers,
-        body=payload
+        body=payload,
+        internal={}
     )
 
 def create_response(status_code: int, status_message: str, body: str = "", content_type: str = "text/html", extra_headers: Optional[Dict[str, str]] = None) -> str:
