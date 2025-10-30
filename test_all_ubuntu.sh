@@ -40,3 +40,11 @@ echo "----------------------------------------"
 echo -e "GET /test.html HTTP/2.0\r\nHost: 127.0.0.1:8080\r\n\r\n" | nc 127.0.0.1 8080
 echo ""
 echo ""
+
+# Test 6: HTTP Proxy without caching
+echo "TEST 6: HTTP Proxy without caching"
+echo "Command: curl --output - -x localhost:8080 example.com"
+echo "----------------------------------------"
+curl --output - -x localhost:8080 example.com
+echo ""
+echo ""
