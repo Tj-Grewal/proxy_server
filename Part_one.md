@@ -1,4 +1,4 @@
-# Part one:
+# Step One: Determine Requirements
 
 This document specifies the logic for generating each of the five required HTTP status codes in our simple web server. The server supports GET and HEAD methods only and serves files from the web root directory.
 
@@ -140,3 +140,15 @@ Connection: close
 These requests use HTTP versions other than 1.1, which our server doesn't support.
 
 ---
+
+
+# Step Two: Build Your Minimal Web Server & Test
+
+## (a)
+
+
+
+# STEP 3
+
+## (c)
+Our TCP server operates on a thread-per-request model (with exception to the main thread which handles socket acceptance). Working in multithreaded code theoretically allows us to add both concurrency and parallelism letting us accept and handle a much larger number of concurrent users than otherwise possible; however implementation details such as Python's global interpreter lock does hamper our efforts as we cannot achieve true parallelism until later versions of Python, where the GIL is removed, is released.

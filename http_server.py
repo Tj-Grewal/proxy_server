@@ -1,5 +1,3 @@
-# TODO: See if there is another exception that's more appropriate than RuntimeError
-
 import dataclasses
 from typing import Optional, Final, List, Dict
 from dataclasses import dataclass
@@ -12,7 +10,7 @@ from datetime import datetime, timezone
 import threading
 from time import time_ns
 
-HTTP_METHODS: Final[List[str]] = ["GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE"]
+HTTP_METHODS: Final[List[str]] = ["GET", "HEAD"]
 HTTP_VERSION: Final[str] = "HTTP/1.1"
 HOST: Final[str] = "127.0.0.1"  # localhost
 PORT: Final[int] = 8080         # Port number
@@ -100,7 +98,6 @@ class HttpProxyCache:
     def is_valid(self, target: str) -> bool:
         return self.entries[target][1] > time_ns()
 
-# TODO: make this thread-safe
 RESPONSE_CACHE: HttpProxyCache = HttpProxyCache(entries={}, lock=threading.RLock())
 
 def parse_request(payload: str) -> HttpRequest:
@@ -119,10 +116,6 @@ def parse_request(payload: str) -> HttpRequest:
     if method not in HTTP_METHODS:
         raise RuntimeError("Invalid method")
 
-    # TODO: Add HTTP-version validation for HTTP1.1
-
-    # TODO: Add request-target validation
-
     if not version.startswith("HTTP/"):
         raise RuntimeError("Invalid HTTP version")
     elif version != HTTP_VERSION:
@@ -135,7 +128,7 @@ def parse_request(payload: str) -> HttpRequest:
         if ":" not in field:
             raise RuntimeError("Malformed header field-line")
 
-        # TODO: Decide on consistency for LF as specified in RFC9112: Section 2.2: 
+        # RFC9112: Section 2.2: 
         # Message Parsing: Although the line terminator for the start-line and fields is the sequence CRLF, 
         # a recipient MAY recognize a single LF as a line terminator and ignore any preceding CR.
         if '\r' in field or '\n' in field:
@@ -147,9 +140,6 @@ def parse_request(payload: str) -> HttpRequest:
         field, payload = payload.split('\r\n', maxsplit=1)
 
     # Parse body (if applicable)
-
-    # TODO: Handle Transfer-Encoding header
-    # TODO: Add Content-Length byte validation
     if headers.get("Content-Length") is None:
         return HttpRequest(
             method=method,
@@ -194,7 +184,6 @@ def handle_local_target(request: HttpRequest, web_root: str) -> str:
 
     # Security check: prevent path traversal attacks (403 Forbidden)
     # For attacks like: GET /../../../etc/passwd HTTP/1.1 - leaking the files
-    # TODO Any other things we can think of adding here? 
     if ".." in target_path or target_path.startswith("/.."):
         body = "<html><body><h1>403 Forbidden</h1><p>Access denied.</p></body></html>"
         return create_response(403, "Forbidden", body)
@@ -309,7 +298,7 @@ def handle_remote_target(request: HttpRequest) -> str:
 
             response += received
 
-    # TODO: technical spec violation since all start-lines and field-liens should be USASCII, but UTF-8 is a superset
+    # UTF-8 is a superset (Since all start-lines and field-lines should be USASCII)
     response = response.decode("utf-8")
 
     # Handle cache re-validation, specifically, if on 304, then re-seat the cached_object into the cache again
@@ -350,14 +339,13 @@ def handle_request(request: HttpRequest, web_root: str = ".") -> str:
     if request.target.startswith("http://"):
         return handle_remote_target(request)
     elif request.target.startswith("https://"):
-        # TODO: out of scope for project, requires CONNECT method due to TLS
+        # Out of scope for project, requires CONNECT method due to TLS
         # This should be covered in earlier method check, but possible that client is inappropriately using methods
         body = "<html><body><h1>501 Not Implemented</h1></body></html>"
         return create_response(501, "Not Implemented", body)
     else:
         return handle_local_target(request, web_root)
 
-# TODO: find out what the type of client_address is, socket._RetAddress gives AttributeErrors
 def handle_connection(client_socket: socket.socket, client_address, web_root: str) -> None:
     print(f"\nConnection from {client_address}")
 
